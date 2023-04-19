@@ -27,7 +27,7 @@ enum _:ConnStruct {
 };
 
 new g_ConnInfo[ConnStruct];
-new Handle:SQL_Tuple, Handle:SQL_Connection;
+new Handle:SQL_Tuple;
 
 
 enum ForwardsEnum {
@@ -70,7 +70,6 @@ public plugin_cfg() {
 }
 
 public plugin_end() {
-    SQL_FreeHandle(SQL_Connection);
     SQL_FreeHandle(SQL_Tuple);
 }
 
@@ -97,15 +96,16 @@ setupConnection() {
         g_ConnInfo[ConnUsername], 
         g_ConnInfo[ConnPassword], 
         g_ConnInfo[ConnDatabase]);
-    
-    SQL_Connection = SQL_Connect(SQL_Tuple, iError, szError, charsmax(szError));
 
-    if (SQL_Connection == Empty_Handle) {
-        UTIL_LogToFile(g_logFile, "ERROR", "plugin_cfg", "[%d] %s", iError, szError);
+    new Handle:connection = SQL_Connect(SQL_Tuple, iError, szError, charsmax(szError));
+
+    if (connection == Empty_Handle) {
         set_fail_state(szError);
     }
 
     SQL_SetCharset(SQL_Tuple, "utf8");
+
+    SQL_FreeHandle(connection);
     
     ExecuteForward(g_Forwards[fwdOnConnectionIsReady], _);
 }

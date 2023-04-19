@@ -98,7 +98,6 @@ public plugin_cfg() {
 	SQL_Connection = SQL_Connect(SQL_Tuple, iError, szError, charsmax(szError));
 
 	if (SQL_Connection == Empty_Handle) {
-		UTIL_LogToFile(MYSQL_LOG, "ERROR", "plugin_cfg", "[%d] %s", iError, szError);
 		set_fail_state(szError);
 	}
 
