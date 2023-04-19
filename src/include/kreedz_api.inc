@@ -101,6 +101,7 @@ forward kz_starttp_pre(id);
 
 forward kz_starttp_post(id);
 
+forward kz_run_finished(id, runInfo[RunStruct], place);
 
 native TimerState:kz_get_timer_state(id);
 

@@ -32,6 +32,7 @@ enum _:eForwards {
 	fwdStartPositionLoaded,
 	fwdNewProRecord,
 	fwdNewNubRecord,
+	fwdRunFinished,
 };
 
 new g_Forwards[eForwards];
@@ -76,6 +77,8 @@ initForwards() {
 	g_Forwards[fwdNewProRecord] = 	CreateMultiForward("kz_top_new_pro_rec", ET_IGNORE, FP_CELL, FP_FLOAT);
 	g_Forwards[fwdNewNubRecord] = 	
 		CreateMultiForward("kz_top_new_nub_rec", ET_IGNORE, FP_CELL, FP_FLOAT, FP_CELL, FP_CELL);
+	g_Forwards[fwdRunFinished] = 	
+		CreateMultiForward("kz_run_finished", ET_IGNORE, FP_CELL, FP_ARRAY, FP_CELL);
 }
 
 initCommands() {
@@ -684,8 +687,12 @@ UPDATE `kz_records` SET `time` = %d, `date` = CURRENT_TIMESTAMP, \
 				g_Candidates[id][run_tpCount], runId);
 
 			SQL_ThreadQuery(SQL_Tuple, "@dummyHandler", szQuery);
+
+			getPlaceByTime(id, "@runFinishedHandler");
 		}
 		else {
+			getPlaceByTime(id, "@runFinishedHandler");
+
 			SQL_FreeHandle(hQuery);
 			return PLUGIN_HANDLED;
 		}
@@ -693,6 +700,7 @@ UPDATE `kz_records` SET `time` = %d, `date` = CURRENT_TIMESTAMP, \
 	// Or insert if not
 	else {
 		insertRecord(id);
+		getPlaceByTime(id, "@runFinishedHandler");
 	}
 
 	// Print map achievement
@@ -810,6 +818,32 @@ INSERT INTO `kz_records` (`user_id`, `map_id`, `time`, `cp`, `tp`, `weapon`, `aa
 		PrepareArray(_:vAngle, sizeof vAngle));
 
 	SQL_FreeHandle(hQuery);
+}
+
+@runFinishedHandler(QueryState, Handle:hQuery, szError[], iError, szData[], iLen, Float:fQueryTime) {
+	switch (QueryState) {
+		case TQUERY_CONNECT_FAILED, TQUERY_QUERY_FAILED: {
+			UTIL_LogToFile(MYSQL_LOG, "ERROR", "runFinishedHandler", "[%d] %s (%.2f sec)", iError, szError, fQueryTime);
+			SQL_FreeHandle(hQuery);
+			
+			return PLUGIN_HANDLED;
+		}
+	}
+
+	new id = szData[0];
+
+	if (SQL_NumResults(hQuery) <= 0) {
+		SQL_FreeHandle(hQuery);
+		return PLUGIN_HANDLED;
+	}
+
+	new place = SQL_ReadResult(hQuery, 0);
+
+	ExecuteForward(g_Forwards[fwdRunFinished], _, 
+		id, PrepareArray(g_Candidates[id], RunStruct), place);
+
+	SQL_FreeHandle(hQuery);
+	return PLUGIN_HANDLED;
 }
 
 @getAchievementHandler(QueryState, Handle:hQuery, szError[], iError, szData[], iLen, Float:fQueryTime) {
