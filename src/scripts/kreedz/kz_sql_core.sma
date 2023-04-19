@@ -496,19 +496,19 @@ printTimeDifference(id, Float:oldTime, Float:newTime) {
 	}
 }
 
-getAchievement(id) {
+getPlaceByTime(id, handler[]) {
 	new mapId = kz_sql_get_map_uid();
 
 	new szQuery[512];
 	formatex(szQuery, charsmax(szQuery), "\
-SELECT COUNT(*) FROM `kz_records` \
-WHERE `map_id` = %d AND `weapon` = %d AND `aa` = %d AND `is_pro_record` = %d AND `time` <= %d;",
+SELECT COUNT(*) + 1 FROM `kz_records` \
+WHERE `map_id` = %d AND `weapon` = %d AND `aa` = %d AND `is_pro_record` = %d AND `time` < %d;",
 		mapId, g_Candidates[id][run_weapon], g_Candidates[id][run_airaccelerate], 
 		(g_Candidates[id][run_tpCount] == 0), g_Candidates[id][run_time]);
 
 	new szData[1];
 	szData[0] = id;
-	SQL_ThreadQuery(SQL_Tuple, "@getAchievementHandler", szQuery, szData, sizeof szData);
+	SQL_ThreadQuery(SQL_Tuple, handler, szQuery, szData, sizeof szData);
 }
 
 public taskShowBestScore(taskId) {
@@ -692,21 +692,11 @@ UPDATE `kz_records` SET `time` = %d, `date` = CURRENT_TIMESTAMP, \
 	}
 	// Or insert if not
 	else {
-		new userId = kz_sql_get_user_uid(id);
-		new mapId = kz_sql_get_map_uid();
-
-		formatex(szQuery, charsmax(szQuery), "\
-INSERT INTO `kz_records` (`user_id`, `map_id`, `time`, `cp`, `tp`, `weapon`, `aa`) VALUES \
-(%d, %d, %d, %d, %d, %d, %d);",
-			userId, mapId, g_Candidates[id][run_time],
-			g_Candidates[id][run_cpCount], g_Candidates[id][run_tpCount],
-			g_Candidates[id][run_weapon], g_Candidates[id][run_airaccelerate]);
-
-		SQL_ThreadQuery(SQL_Tuple, "@dummyHandler", szQuery);
+		insertRecord(id);
 	}
 
 	// Print map achievement
-	getAchievement(id);
+	getPlaceByTime(id, "@getAchievementHandler");
 
 	// Update personal record info
 	if (g_Candidates[id][run_tpCount] == 0) {
@@ -724,6 +714,21 @@ INSERT INTO `kz_records` (`user_id`, `map_id`, `time`, `cp`, `tp`, `weapon`, `aa
 
 	SQL_FreeHandle(hQuery);
 	return PLUGIN_HANDLED;
+}
+
+insertRecord(id) {
+	new szQuery[512];
+	new userId = kz_sql_get_user_uid(id);
+	new mapId = kz_sql_get_map_uid();
+
+	formatex(szQuery, charsmax(szQuery), "\
+INSERT INTO `kz_records` (`user_id`, `map_id`, `time`, `cp`, `tp`, `weapon`, `aa`) VALUES \
+(%d, %d, %d, %d, %d, %d, %d);",
+		userId, mapId, g_Candidates[id][run_time],
+		g_Candidates[id][run_cpCount], g_Candidates[id][run_tpCount],
+		g_Candidates[id][run_weapon], g_Candidates[id][run_airaccelerate]);
+
+	SQL_ThreadQuery(SQL_Tuple, "@dummyHandler", szQuery);
 }
 
 @getPersonalRecordHandler(QueryState, Handle:hQuery, szError[], iError, szData[], iLen, Float:fQueryTime) {
@@ -819,62 +824,63 @@ INSERT INTO `kz_records` (`user_id`, `map_id`, `time`, `cp`, `tp`, `weapon`, `aa
 
 	new id = szData[0];
 
-	if (SQL_NumResults(hQuery) > 0) {
-		new place = SQL_ReadResult(hQuery, 0);
+	if (SQL_NumResults(hQuery) <= 0) {
+		SQL_FreeHandle(hQuery);
+		return PLUGIN_HANDLED;
+	}
 
-		new szPlace[32], szTopType[32];
-		new printType = print_team_default;
+	new place = SQL_ReadResult(hQuery, 0);
 
-		new szName[MAX_NAME_LENGTH];
-		get_user_name(id, szName, charsmax(szName));
+	new szPlace[32], szTopType[32];
+	new printType = print_team_default;
 
-		new szWeaponName[32];
-		kz_get_weapon_name(g_Candidates[id][run_weapon], szWeaponName, charsmax(szWeaponName));
+	new szName[MAX_NAME_LENGTH];
+	get_user_name(id, szName, charsmax(szName));
+
+	new szWeaponName[32];
+	kz_get_weapon_name(g_Candidates[id][run_weapon], szWeaponName, charsmax(szWeaponName));
+
+	if (g_Candidates[id][run_tpCount] == 0)
+		formatex(szTopType, charsmax(szTopType), "pro");
+	else
+		formatex(szTopType, charsmax(szTopType), "nub");
+
+	switch (place) {
+		case 1: {
+			printType = print_team_red;
+			formatex(szPlace, charsmax(szPlace), "^3 1");
+		}
+		case 2: {
+			printType = print_team_grey;
+			formatex(szPlace, charsmax(szPlace), "^3 2");
+		}
+		case 3: {
+			printType = print_team_blue;
+			formatex(szPlace, charsmax(szPlace), "^3 3");
+		}
+		default: {
+			printType = print_team_default;
+			formatex(szPlace, charsmax(szPlace), "^1 %d", place);
+		}
+	}
+
+	// Print achievement message
+	client_print_color(0, printType, 
+		"^4[KZ]^1 %s achieved%s^1 place in the %s top with %s!", 
+		szName, szPlace, szTopType, szWeaponName);
+
+	
+	// Call forward
+	if (g_Candidates[id][run_weapon] == WPN_USP) {
+		new Float:time = (place == 1) ? g_Candidates[id][run_time] : 0.0;
 
 		if (g_Candidates[id][run_tpCount] == 0) {
-			formatex(szTopType, charsmax(szTopType), "pro");
+			g_HasMapProRecord[AIR_ACCELERATE_10] = true;
+			ExecuteForward(g_Forwards[fwdNewProRecord], _, id, time);
 		}
-		else {
-			formatex(szTopType, charsmax(szTopType), "nub");
-		}
-
-		switch (place) {
-			case 1: {
-				printType = print_team_red;
-				formatex(szPlace, charsmax(szPlace), "^3 1");
-			}
-			case 2: {
-				printType = print_team_grey;
-				formatex(szPlace, charsmax(szPlace), "^3 2");
-			}
-			case 3: {
-				printType = print_team_blue;
-				formatex(szPlace, charsmax(szPlace), "^3 3");
-			}
-			default: {
-				printType = print_team_default;
-				formatex(szPlace, charsmax(szPlace), "^1 %d", place);
-			}
-		}
-
-		// Print achievement message
-		client_print_color(0, printType, 
-			"^4[KZ]^1 %s achieved%s^1 place in the %s top with %s!", 
-			szName, szPlace, szTopType, szWeaponName);
-
-		
-		// Call forward
-		if (g_Candidates[id][run_weapon] == WPN_USP) {
-			new Float:time = (place == 1) ? g_Candidates[id][run_time] : 0.0;
-
-			if (g_Candidates[id][run_tpCount] == 0) {
-				g_HasMapProRecord[AIR_ACCELERATE_10] = true;
-				ExecuteForward(g_Forwards[fwdNewProRecord], _, id, time);
-			}
-			else
-				ExecuteForward(g_Forwards[fwdNewNubRecord], _, id, time, 
-					g_Candidates[id][run_cpCount], g_Candidates[id][run_tpCount]);
-		}
+		else
+			ExecuteForward(g_Forwards[fwdNewNubRecord], _, id, time, 
+				g_Candidates[id][run_cpCount], g_Candidates[id][run_tpCount]);
 	}
 
 	SQL_FreeHandle(hQuery);
